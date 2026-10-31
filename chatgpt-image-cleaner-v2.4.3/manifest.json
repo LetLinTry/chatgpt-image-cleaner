@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT 图片清理器",
+  "version": "2.4.3",
+  "description": "通过 ChatGPT 官方接口分页扫描并批量删除资料库中的全部图片，支持数万张规模。",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://chatgpt.com/*"],
+  "action": {
+    "default_title": "ChatGPT 图片清理器",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["src/page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["src/dom.js", "src/api-client.js", "src/cleaner.js", "src/controller.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

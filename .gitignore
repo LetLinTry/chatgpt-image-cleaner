@@ -1,0 +1,7 @@
+*.pyc
+.DS_Store
+.env
+.env.*
+__pycache__/
+chatgpt-image-cleaner-v2.4.3.zip
+node_modules/

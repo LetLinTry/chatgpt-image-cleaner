@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ChatGPT 图片清理器</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark" aria-hidden="true">✦</div>
+      <div><h1>图片清理器</h1><p>ChatGPT Library 批量清理</p></div>
+    </header>
+
+    <section class="panel">
+      <div class="status-row"><span class="dot" id="dot"></span><span id="status">正在检查当前页面…</span></div>
+      <div class="meter"><div id="meter-bar"></div></div>
+      <p id="detail" class="detail">请先打开 chatgpt.com 页面。</p>
+    </section>
+
+    <button id="open-library" class="secondary">打开 ChatGPT 资料库</button>
+
+    <section id="danger-zone" class="danger-zone" hidden>
+      <div class="option-row">
+        <div class="option">
+          <label for="age">删除范围</label>
+          <select id="age">
+            <option value="0">全部图片</option>
+            <option value="7">仅 7 天前的</option>
+            <option value="30">仅 30 天前的</option>
+            <option value="90">仅 90 天前的</option>
+          </select>
+        </div>
+        <div class="option">
+          <label for="threads">并发线程</label>
+          <select id="threads">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+      </div>
+      <p><strong>边抓取边删除，无需预先扫描。</strong><br>聊天文字、PDF、文档和表格不会被处理。</p>
+      <button id="delete" class="danger">开始删除</button>
+      <button id="scan" class="secondary">统计图片总数（可选）</button>
+      <button id="cancel" class="secondary" hidden>停止操作</button>
+    </section>
+
+    <p class="footnote">插件只调用 ChatGPT 自身接口，不上传账号或聊天数据。删除在页面后台运行，关闭本弹窗不影响进度。</p>
+  </main>
+  <script src="src/popup-logic.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
