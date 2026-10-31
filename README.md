@@ -10,12 +10,34 @@ v2.0 起不再模拟页面点击，而是直接调用 ChatGPT 页面自身使用
 
 因此可以稳定处理数万张图片，不受虚拟列表、悬停复选框等页面结构变化影响。
 
-## 安装 / 更新
+## 安装
 
-1. Chrome 打开 `chrome://extensions`；Edge 打开 `edge://extensions`。
-2. 开启右上角"开发者模式"。
-3. 首次安装点击"加载已解压的扩展程序"选择本文件夹；已安装则点击扩展卡片上的"重新加载"（⟳）。
-4. 将扩展固定到浏览器工具栏。
+### 方式一：下载现成压缩包（推荐，不需要命令行）
+
+1. 到 [Releases](https://github.com/LetLinTry/chatgpt-image-cleaner/releases) 下载最新的 `chatgpt-image-cleaner.zip`。
+2. 解压到**一个固定的目录**，之后不要移动或删除它——浏览器直接从这个目录加载扩展。
+3. Chrome 打开 `chrome://extensions`；Edge 打开 `edge://extensions`。
+4. 开启右上角的「开发者模式」。
+5. 点击「加载已解压的扩展程序」，选择第 2 步解压出来的文件夹。
+6. 把扩展图标固定到浏览器工具栏，方便下次点击。
+
+### 方式二：从源码打包（开发者）
+
+```bash
+git clone https://github.com/LetLinTry/chatgpt-image-cleaner.git
+cd chatgpt-image-cleaner
+sh scripts/package.sh      # 产物：../outputs/chatgpt-image-cleaner.zip
+```
+
+然后按方式一的第 2–6 步安装。
+
+### 更新
+
+重新下载或重新打包后，到 `chrome://extensions` 点击扩展卡片上的「重新加载」（⟳）。
+
+> 注意：**不要移动解压后的文件夹**，路径一变扩展就会失效，需要重新走一遍安装步骤。
+
+> 为什么必须开「开发者模式」？因为本扩展没有上架 Chrome 应用商店。上架需要注册开发者账号并经过审核，属于后续计划。
 
 ## 使用
 
