@@ -9,7 +9,7 @@
   "devDependencies": {
     "jsdom": "^26.1.0"
   },
-  "description": "通过 ChatGPT 官方接口分页扫描并批量删除资料库中的图片",
+  "description": "ChatGPT 资料库图片批量清理：通过官方接口分页扫描并软删除，解决账号 20GB 容量上限",
   "license": "MIT",
   "repository": {
     "type": "git",
