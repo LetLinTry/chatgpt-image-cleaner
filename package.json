@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-image-cleaner",
-  "version": "1.1.0",
+  "version": "2.4.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,5 +8,11 @@
   },
   "devDependencies": {
     "jsdom": "^26.1.0"
+  },
+  "description": "通过 ChatGPT 官方接口分页扫描并批量删除资料库中的图片",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LetLinTry/chatgpt-image-cleaner.git"
   }
 }
