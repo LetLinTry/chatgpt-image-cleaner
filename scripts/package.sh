@@ -21,6 +21,6 @@ zip -qr "$archive" chatgpt-image-cleaner \
      "chatgpt-image-cleaner/scripts/*" \
      "chatgpt-image-cleaner/LICENSE" \
      "chatgpt-image-cleaner/README.md" \
-     "chatgpt-image-cleaner/docs/*" 
+     "chatgpt-image-cleaner/docs/*" \
      "chatgpt-image-cleaner/*.zip"
 printf '%s\n' "$archive"
