@@ -8,13 +8,14 @@ ChatGPT 账号的资料库有容量上限（20 GB 量级）。长期用 GPT 生�
 
 官方界面只能逐个删除图片——几万张图手工清理不现实。本扩展直接调用资料库页面自身使用的后端接口，分页扫描 + 批量软删除，把这件事压缩到一次点击。
 
-v2.0 起不再模拟页面点击，而是直接调用 ChatGPT 页面自身使用的后端接口（v2.4 对应新版资料库文件系统）：
+当前使用资料库页面的 POST JSON 接口：
 
-- 列表：`GET /backend-api/files/library/nodes?categories=image&cursor=…`（服务端只返回图片，游标分页）
-- 删除：`POST /backend-api/files/library/files/{libfile_id}/delete_stream?soft_delete=true&file_id=…&parent_directory_id=…&file_name=…`（软删除，可在"最近删除"中恢复）
-- 兜底：扩展还会在主世界挂只读钩子（`src/page-hook.js`），捕获资料库页面自己发出的列表请求；若官方接口再变，捕获到的真实 URL 会被优先复用。
+- 列表：`POST /backend-api/files/library`，请求体中传入 `limit` 和 `cursor`，同时启用上传文件和生成图片的读取。客户端按 MIME 类型过滤图片；非图片页仍按游标继续读取。
+- 删除：`POST /backend-api/files/library/files/delete-batch`，通过 `files` 数组提交文件元数据，逐项校验 `success` 和 `status_code`，不把 HTTP 200 或 404 直接视为删除成功。
+- 同页及后续页按资料库文件 ID 去重；同一次任务不会再次删除已成功或失败的条目。
+- 删除使用持续补位的并发工作槽，弹窗显示失败状态码；409 直接跳过，429 和临时服务错误有限退避重试。
 
-因此可以稳定处理数万张图片，不受虚拟列表、悬停复选框等页面结构变化影响。
+接口可能随 ChatGPT 更新变化；不再探测已失效的 GET 列表或旧版删除接口，也不注入页面请求钩子。
 
 ## 安装
 

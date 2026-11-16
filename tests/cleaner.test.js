@@ -78,7 +78,7 @@ test("fails closed when the delete endpoint keeps rejecting from the start", asy
   const { api } = fakeApi(store, { failIds: store.slice() });
   await assert.rejects(
     () => deleteAllImages({  api, pageLimit: 10, interDeleteDelay: 0, emptyRecheckDelay: 0 }),
-    /删除接口连续失败/
+    /删除连续失败/
   );
 });
 
