@@ -107,7 +107,7 @@
 
   ui.scan.addEventListener("click", async () => {
     setBusyView(true);
-    setStatus("正在统计图片总数…", "通过 ChatGPT 接口分页统计。", "", 25);
+    setStatus("正在统计图片与 ZIP 总数…", "通过 ChatGPT 接口分页统计。", "", 25);
     try {
       const result = await send({ type: "scan" });
       setStatus("统计完成", ChatGPTImageCleanerPopup.formatScanResult(result), "ok", 100);
@@ -128,8 +128,8 @@
         concurrency: Number(ui.threads.value),
         minAgeDays: Number(ui.age.value)
       });
-      const failedNote = result.failed > 0 ? `，${result.failed} 张失败已跳过` : "";
-      setStatus("删除完成", `已删除 ${result.deleted} 张图片${failedNote}。`, "ok", 100);
+      const failedNote = result.failed > 0 ? `，${result.failed} 个失败已跳过` : "";
+      setStatus("删除完成", `已删除 ${result.deleted} 个文件${failedNote}。`, "ok", 100);
     } catch (error) {
       setStatus("操作已停止", error.message, "error");
     } finally {
@@ -145,7 +145,7 @@
     if (message?.source !== "chatgpt-image-cleaner" || message.type !== "progress") return;
     const event = message.event || {};
     if (event.phase === "scanning") {
-      setStatus("正在统计图片总数…", `已统计 ${event.total || 0} 张。`, "", 50);
+      setStatus("正在统计图片与 ZIP 总数…", `已统计 ${event.total || 0} 个。`, "", 50);
     }
     if (event.phase === "progress") {
       setStatus(
@@ -156,8 +156,8 @@
       );
     }
     if (event.phase === "complete") {
-      const failedNote = event.failed > 0 ? `，${event.failed} 张失败已跳过` : "";
-      setStatus("删除完成", `已删除 ${event.deleted || 0} 张图片${failedNote}。`, "ok", 100);
+      const failedNote = event.failed > 0 ? `，${event.failed} 个失败已跳过` : "";
+      setStatus("删除完成", `已删除 ${event.deleted || 0} 个文件${failedNote}。`, "ok", 100);
       setBusyView(false);
     }
     if (event.phase === "stopped" && event.error) {

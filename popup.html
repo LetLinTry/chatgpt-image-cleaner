@@ -26,7 +26,9 @@
         <div class="option">
           <label for="age">删除范围</label>
           <select id="age">
-            <option value="0">全部图片</option>
+            <option value="0">全部图片和 ZIP</option>
+            <option value="1">仅 1 天前的</option>
+            <option value="3">仅 3 天前的</option>
             <option value="7">仅 7 天前的</option>
             <option value="30">仅 30 天前的</option>
             <option value="90">仅 90 天前的</option>
@@ -44,9 +46,9 @@
           </select>
         </div>
       </div>
-      <p><strong>边抓取边删除，无需预先扫描。</strong><br>聊天文字、PDF、文档和表格不会被处理。</p>
+      <p><strong>清理图片和 ZIP，边抓取边删除。</strong><br>聊天文字、PDF、文档和表格不会被处理。</p>
       <button id="delete" class="danger">开始删除</button>
-      <button id="scan" class="secondary">统计图片总数（可选）</button>
+      <button id="scan" class="secondary">统计图片与 ZIP 总数（可选）</button>
       <button id="cancel" class="secondary" hidden>停止操作</button>
     </section>
 

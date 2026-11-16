@@ -4,9 +4,9 @@
   const BASE = "https://chatgpt.com";
 
   // 依次探测的列表接口；第一个返回文件数组的胜出。
-  // nodes 是资料库页面实际使用的接口（categories=image 服务端只返回图片）。
+  // 获取混合文件后在客户端保留图片和 ZIP，避免服务端图片过滤排除 ZIP。
   const LIST_CANDIDATES = [
-    { path: "/backend-api/files/library/nodes", params: { categories: "image" }, kind: "library", trust: true },
+    { path: "/backend-api/files/library/nodes", kind: "library" },
     { path: "/backend-api/files/library/files", kind: "library" },
     { path: "/backend-api/files/library", kind: "library" },
     { path: "/backend-api/my/recent/image_gen", kind: "image_gen" }
@@ -69,7 +69,7 @@
 
   function looksLikeImage(item) {
     const mime = String(item?.mime_type || item?.mimeType || item?.content_type || "").toLowerCase();
-    if (mime.startsWith("image/")) return true;
+    if (mime.startsWith("image/") || mime === "application/zip") return true;
     if (mime) return false;
     const name = fileName(item);
     if (name && IMAGE_EXTENSION.test(name)) return true;
