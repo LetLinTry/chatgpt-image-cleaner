@@ -37,35 +37,22 @@ test("imageId digs long ids out of unknown nested node shapes", async () => {
   assert.equal(imageId({ file_name: "a.png", libfile_id: null }), null);
 });
 
-test("prefers the library nodes endpoint with categories=image and no client-side filtering", async () => {
+test("library nodes retrieves mixed files and keeps only images and ZIP", async () => {
   const { createApiClient } = await loadApi();
   const requested = [];
-  const client = createApiClient({
-    accessToken: "token",
-    wait: async () => {},
-    fetch: async (url) => {
-      requested.push(url);
-      if (url.includes("/backend-api/files/library/nodes?")) {
-        return jsonResponse({
-          nodes: [
-            { id: "libfile_a1", name: "无扩展名的生成图" },
-            { id: "libfile_a2", name: "b.png" }
-          ],
-          cursor: "cur-1"
-        });
-      }
-      return jsonResponse({}, 404);
-    }
-  });
+  const client = createApiClient({ accessToken: "token", fetch: async url => {
+    requested.push(url);
+    return jsonResponse({ nodes: [
+      { id: "libfile_image", mime_type: "image/png" },
+      { id: "libfile_zip", mime_type: "application/zip", library_file_category: "other" },
+      { id: "libfile_pdf", mime_type: "application/pdf" }
+    ], cursor: "next" });
+  } });
   const page = await client.listImages({ limit: 50 });
-  // 服务端已按 categories=image 过滤，客户端不再按文件名二次过滤
-  assert.equal(page.items.length, 2);
-  assert.equal(page.cursor, "cur-1");
-  assert.ok(requested[0].includes("categories=image"));
-  await client.listImages({ limit: 50, after: "cur-1" });
-  const second = requested.filter((url) => url.includes("/nodes?"))[1];
-  assert.ok(second.includes("cursor=cur-1"));
-  assert.ok(second.includes("categories=image"));
+  assert.deepEqual(page.items.map(item => item.id), ["libfile_image", "libfile_zip"]);
+  assert.equal(new URL(requested[0]).searchParams.has("categories"), false);
+  await client.listImages({ after: "next" });
+  assert.equal(new URL(requested[1]).searchParams.get("cursor"), "next");
 });
 
 test("reuses a captured page list url, swapping cursor and limit", async () => {
