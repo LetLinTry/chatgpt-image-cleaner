@@ -128,8 +128,7 @@
         concurrency: Number(ui.threads.value),
         minAgeDays: Number(ui.age.value)
       });
-      const failedNote = result.failed > 0 ? `，${result.failed} 张失败已跳过` : "";
-      setStatus("删除完成", `已删除 ${result.deleted} 张图片${failedNote}。`, "ok", 100);
+      setStatus("删除完成", `${ChatGPTImageCleanerPopup.formatDeleteProgress(result)}。`, "ok", 100);
     } catch (error) {
       setStatus("操作已停止", error.message, "error");
     } finally {
@@ -156,8 +155,7 @@
       );
     }
     if (event.phase === "complete") {
-      const failedNote = event.failed > 0 ? `，${event.failed} 张失败已跳过` : "";
-      setStatus("删除完成", `已删除 ${event.deleted || 0} 张图片${failedNote}。`, "ok", 100);
+      setStatus("删除完成", `${ChatGPTImageCleanerPopup.formatDeleteProgress(event)}。`, "ok", 100);
       setBusyView(false);
     }
     if (event.phase === "stopped" && event.error) {

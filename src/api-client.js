@@ -2,267 +2,126 @@
   "use strict";
 
   const BASE = "https://chatgpt.com";
-
-  // 依次探测的列表接口；第一个返回文件数组的胜出。
-  // nodes 是资料库页面实际使用的接口（categories=image 服务端只返回图片）。
-  const LIST_CANDIDATES = [
-    { path: "/backend-api/files/library/nodes", params: { categories: "image" }, kind: "library", trust: true },
-    { path: "/backend-api/files/library/files", kind: "library" },
-    { path: "/backend-api/files/library", kind: "library" },
-    { path: "/backend-api/my/recent/image_gen", kind: "image_gen" }
-  ];
-
-  const IMAGE_EXTENSION = /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
-
-  function defaultWait(milliseconds) {
-    return new Promise((resolve) => setTimeout(resolve, milliseconds));
-  }
-
-  function firstMatch(fields, pattern) {
-    for (const field of fields) {
-      const matches = String(field || "").match(pattern);
-      if (matches) return matches[matches.length - 1];
-    }
-    return null;
-  }
-
-  // 节点结构未知时的兜底：在整个条目的 JSON 里找长 ID。
-  // 长度门槛（16+）避免误匹配 "libfile_id" 这类字段名。
-  function deepMatch(item, pattern) {
-    try {
-      const matches = JSON.stringify(item).match(pattern);
-      return matches ? matches[0] : null;
-    } catch (_) {
-      return null;
-    }
-  }
+  // 请求结构来自 2026-11-12 网页实际请求；读取上传和生成图片，客户端过滤非图片。
+  const LIST_BODY = Object.freeze({
+    cursor: null, limit: 50, categories: [], source: null,
+    include_hidden_files: false, include_pages: false,
+    defer_page_sharing_badges: true, defer_sharing_badges: true,
+    exclude_saved_responses: true, exclude_space_roots: true,
+    exclude_embedded_artifacts: true, include_uploaded_files: true,
+    include_imagegen_files: true, include_saved_entities: false,
+    include_sites: false, ranking: "suggested", providers: []
+  });
 
   function libraryFileId(item) {
-    return firstMatch([item?.id, item?.library_file_id, item?.libfile_id], /libfile_[A-Za-z0-9_-]+/g)
-      || deepMatch(item, /libfile_[A-Za-z0-9-]{16,}/);
+    const id = item?.library_file_id || item?.id;
+    return typeof id === "string" && /^libfile_[A-Za-z0-9_-]+$/.test(id) ? id : null;
   }
-
   function fileId(item) {
-    return firstMatch(
-      [item?.file_id, item?.file?.id, item?.id, item?.asset_pointer, item?.generation_id],
-      /file[-_][A-Za-z0-9_-]+/g
-    ) || deepMatch(item, /(?<!lib)file[-_][A-Za-z0-9-]{16,}/);
+    const id = item?.file_id;
+    return typeof id === "string" && /^file[_-][A-Za-z0-9_-]+$/.test(id) ? id : null;
   }
-
-  function imageId(item) {
-    const id = libraryFileId(item) || fileId(item);
-    if (id) return id;
-    return typeof item?.id === "string" && item.id ? item.id : null;
-  }
-
-  function fileName(item) {
-    const value = item?.file_name || item?.name || item?.title;
-    return typeof value === "string" && value ? value : null;
-  }
-
-  function parentDirectoryId(item) {
-    return firstMatch(
-      [item?.parent_directory_id, item?.directory_id, item?.parent_id, item?.directory?.id],
-      /libdir_[A-Za-z0-9_-]+/g
-    ) || deepMatch(item, /libdir_[A-Za-z0-9-]{16,}/);
-  }
-
+  function parentDirectoryId(item) { return item?.parent_directory_id ?? item?.directory_id ?? null; }
+  function fileName(item) { return typeof item?.file_name === "string" ? item.file_name : null; }
+  function imageId(item) { return libraryFileId(item); }
   function looksLikeImage(item) {
-    const mime = String(item?.mime_type || item?.mimeType || item?.content_type || "").toLowerCase();
-    if (mime.startsWith("image/")) return true;
-    if (mime) return false;
-    const name = fileName(item);
-    if (name && IMAGE_EXTENSION.test(name)) return true;
-    const kind = String(item?.file_type || item?.type || item?.category || item?.kind || "").toLowerCase();
-    return /image|photo/.test(kind);
-  }
-
-  function extractItems(data) {
-    for (const key of ["items", "nodes", "files", "data", "results"]) {
-      if (Array.isArray(data?.[key])) return data[key];
-    }
-    return null;
-  }
-
-  function extractCursor(data) {
-    const cursor = data?.cursor ?? data?.next_cursor ?? data?.after ?? data?.next ?? null;
-    return typeof cursor === "string" && cursor ? cursor : null;
-  }
-
-  function hasTypeEvidence(item) {
-    return [
-      item?.mime_type, item?.mimeType, item?.content_type,
-      item?.file_name, item?.name,
-      item?.file_type, item?.category, item?.kind
-    ].some((value) => value !== undefined && value !== null && value !== "");
-  }
-
-  // 有类型信息的条目必须确认是图片；完全没有类型信息的条目视为纯图片流（如 image_gen）
-  function filterImages(items) {
-    return items.filter((item) => !hasTypeEvidence(item) || looksLikeImage(item));
-  }
-
-  function buildCapturedPath(rawUrl, { limit, after }) {
-    const url = new URL(rawUrl, BASE);
-    if (limit) url.searchParams.set("limit", String(limit));
-    const cursorParam = ["cursor", "after", "next", "offset"].find((name) => url.searchParams.has(name));
-    if (after) {
-      if (cursorParam) {
-        url.searchParams.set(cursorParam, after);
-      } else {
-        url.searchParams.set("after", after);
-        url.searchParams.set("cursor", after);
-      }
-    } else if (cursorParam) {
-      url.searchParams.delete(cursorParam);
-    }
-    return `${url.pathname}?${url.searchParams.toString()}`;
+    if (item?.trashed_at) return false;
+    const mime = String(item?.mime_type || "").toLowerCase();
+    if (mime) return mime.startsWith("image/");
+    if (item?.library_file_category) return item.library_file_category === "image";
+    return /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i.test(fileName(item) || "");
   }
 
   function createApiClient(options = {}) {
     const fetchImpl = options.fetch || scope.fetch.bind(scope);
-    const wait = options.wait || defaultWait;
+    const wait = options.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     const maxRetries = options.maxRetries ?? 5;
-    const capturedList = options.capturedList || null;
     let accessToken = options.accessToken || null;
-    let listEndpoint = options.listEndpoint || null;
-    let listSource = null;
 
-    async function authHeaders() {
-      if (!accessToken) {
-        const response = await fetchImpl(`${BASE}/api/auth/session`, { credentials: "include" });
-        if (!response.ok) {
-          throw new Error(`无法获取登录会话（HTTP ${response.status}），请先登录 ChatGPT`);
-        }
-        const session = await response.json();
-        accessToken = session?.accessToken;
-        if (!accessToken) throw new Error("未登录 ChatGPT，请先登录后重试");
-      }
-      return { Authorization: `Bearer ${accessToken}` };
-    }
-
-    async function request(path, init = {}) {
+    async function request(path, body) {
+      let refreshed = false;
       for (let attempt = 0; ; attempt += 1) {
-        const headers = { ...(await authHeaders()), ...(init.headers || {}) };
+        if (!accessToken) {
+          const sessionResponse = await fetchImpl(`${BASE}/api/auth/session`, { credentials: "include" });
+          if (!sessionResponse.ok) throw new Error(`无法获取登录会话（HTTP ${sessionResponse.status}），请先登录 ChatGPT`);
+          accessToken = (await sessionResponse.json())?.accessToken;
+          if (!accessToken) throw new Error("未登录 ChatGPT，请先登录后重试");
+        }
         let response;
         try {
-          response = await fetchImpl(`${BASE}${path}`, { credentials: "include", ...init, headers });
+          response = await fetchImpl(`${BASE}${path}`, {
+            method: "POST", credentials: "include",
+            headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
         } catch (error) {
-          // 网络抖动（断网、连接被重置等）
-          if (attempt < maxRetries) {
-            await wait(Math.min(30000, 1000 * 2 ** attempt));
-            continue;
-          }
-          throw error;
-        }
-        if (response.status === 401 && attempt === 0) {
-          accessToken = null;
+          if (attempt >= maxRetries) throw error;
+          await wait(Math.min(30000, 1000 * 2 ** attempt));
           continue;
         }
-        // 429 限流和 5xx 服务端临时故障都退避重试
+        if (response.status === 401) {
+          if (refreshed) throw new Error("登录会话已失效，请先登录 ChatGPT 后重试");
+          accessToken = null;
+          refreshed = true;
+          continue;
+        }
         if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
           const retryAfter = Number(response.headers?.get?.("retry-after"));
-          const backoff = Number.isFinite(retryAfter) && retryAfter > 0
-            ? retryAfter * 1000
-            : Math.min(30000, 1000 * 2 ** attempt);
-          await wait(backoff);
+          await wait(retryAfter > 0 ? retryAfter * 1000 : Math.min(30000, 1000 * 2 ** attempt));
           continue;
         }
         return response;
       }
     }
 
-    async function tryListEndpoint(candidate, { limit, after }) {
-      const query = new URLSearchParams({ limit: String(limit), ...(candidate.params || {}) });
-      if (after) {
-        // 游标参数名不确定，同时携带两种；服务端会忽略不认识的参数
-        query.set("after", after);
-        query.set("cursor", after);
-      }
-      const response = await request(`${candidate.path}?${query.toString()}`, { method: "GET" });
-      if (!response.ok) return { ok: false, status: response.status };
+    async function listImages({ limit = 50, after = null } = {}) {
+      const response = await request("/backend-api/files/library", {
+        ...LIST_BODY, limit: Math.max(1, Math.min(50, Math.floor(Number(limit)) || 50)), cursor: after
+      });
+      if (!response.ok) throw new Error(`读取文件列表失败（HTTP ${response.status}）`);
       const data = await response.json().catch(() => null);
-      const items = extractItems(data);
-      if (!items) return { ok: false, status: response.status };
-      return { ok: true, items, cursor: extractCursor(data) };
-    }
-
-    async function listImages({ limit = 100, after = null } = {}) {
-      // 优先复用页面自己使用的列表接口（由 page-hook 捕获）
-      if (capturedList?.url) {
-        const path = buildCapturedPath(capturedList.url, { limit, after });
-        const response = await request(path, { method: "GET" });
-        if (response.ok) {
-          const data = await response.json().catch(() => null);
-          const items = extractItems(data);
-          if (items) {
-            listSource = `页面捕获 ${new URL(capturedList.url, BASE).pathname}`;
-            // 接口已按 categories=image 过滤时，直接信任服务端结果
-            const trusted = /categories=image/.test(String(capturedList.url));
-            return { items: trusted ? items : filterImages(items), cursor: extractCursor(data) };
-          }
-        }
-        console.warn("[图片清理器] 捕获的列表接口失效（HTTP", response.status, "），改用候选探测");
+      if (!Array.isArray(data?.items) || (data.cursor != null && typeof data.cursor !== "string")) {
+        throw new Error("文件列表响应格式已变化，已停止");
       }
-      if (listEndpoint) {
-        const result = await tryListEndpoint(listEndpoint, { limit, after });
-        if (!result.ok) throw new Error(`读取图片列表失败（HTTP ${result.status}）`);
-        return { items: listEndpoint.trust ? result.items : filterImages(result.items), cursor: result.cursor };
-      }
-      const failures = [];
-      for (const candidate of LIST_CANDIDATES) {
-        const result = await tryListEndpoint(candidate, { limit, after });
-        if (result.ok) {
-          listEndpoint = candidate;
-          listSource = `候选探测 ${candidate.path}`;
-          console.info("[图片清理器] 列表接口探测成功:", candidate.path);
-          return { items: candidate.trust ? result.items : filterImages(result.items), cursor: result.cursor };
-        }
-        failures.push(`${candidate.path} → HTTP ${result.status}`);
-      }
-      throw new Error(`所有候选列表接口都不可用：${failures.join("；")}。请在资料库页面打开插件重试`);
+      return { items: data.items.filter((item) => libraryFileId(item) && looksLikeImage(item)), cursor: data.cursor || null };
     }
 
     async function deleteImage(item) {
       const libId = libraryFileId(item);
-      if (libId) {
-        const params = new URLSearchParams({ soft_delete: "true" });
-        const underlying = fileId(item);
-        const directory = parentDirectoryId(item);
-        const name = fileName(item);
-        if (underlying) params.set("file_id", underlying);
-        if (directory) params.set("parent_directory_id", directory);
-        if (name) params.set("file_name", name);
-        const response = await request(
-          `/backend-api/files/library/files/${encodeURIComponent(libId)}/delete_stream?${params.toString()}`,
-          { method: "POST" }
-        );
-        if (response.status === 404) return { ok: true, gone: true };
-        if (!response.ok) return { ok: false, status: response.status };
-        return { ok: true };
+      const underlying = fileId(item);
+      const directory = parentDirectoryId(item);
+      const name = fileName(item);
+      const missing = [];
+      if (!looksLikeImage(item)) missing.push("图片类型");
+      if (!libId) missing.push("library_file_id");
+      if (!underlying) missing.push("file_id");
+      if (!name) missing.push("file_name");
+      if (typeof directory !== "string" || !/^libdir_[A-Za-z0-9_-]+$/.test(directory)) missing.push("parent_directory_id");
+      if (!looksLikeImage(item) || !libId || !underlying || !name ||
+          typeof directory !== "string" || !/^libdir_[A-Za-z0-9_-]+$/.test(directory)) {
+        return { ok: false, status: `缺少有效字段：${missing.join("、")}` };
       }
-      const legacyId = fileId(item);
-      if (!legacyId) return { ok: false, status: "无法识别的条目 ID" };
-      const response = await request(`/backend-api/files/${encodeURIComponent(legacyId)}`, { method: "DELETE" });
-      if (response.status === 404) return { ok: true, gone: true };
-      if (!response.ok) return { ok: false, status: response.status };
-      return { ok: true };
+      // HTTP 200 也可能包含单文件的失败码。
+      for (let attempt = 0; ; attempt += 1) {
+        const response = await request("/backend-api/files/library/files/delete-batch", {
+          files: [{ library_file_id: libId, file_id: underlying, parent_directory_id: directory, file_name: name }]
+        });
+        if (!response.ok) return { ok: false, status: `HTTP ${response.status}` };
+        const data = await response.json().catch(() => null);
+        const result = Array.isArray(data?.files) ? data.files.find((file) => file.library_file_id === libId) : null;
+        if (response.ok && data?.success === true && result?.success === true && result?.status_code === 200) return { ok: true };
+        const status = response.ok ? result?.status_code : response.status;
+        if ((status === 429 || status >= 500) && attempt < maxRetries) {
+          await wait(Math.min(30000, 1000 * 2 ** attempt));
+          continue;
+        }
+        return { ok: false, status: status ? `单文件 HTTP ${status}` : "删除响应未确认成功" };
+      }
     }
-
-    function describe() {
-      return listSource || "尚未调用列表接口";
-    }
-
-    return Object.freeze({ listImages, deleteImage, imageId, describe });
+    return Object.freeze({ listImages, deleteImage, imageId, describe: () => "POST /backend-api/files/library" });
   }
 
   scope.ChatGPTImageCleanerApi = Object.freeze({
-    createApiClient,
-    imageId,
-    looksLikeImage,
-    libraryFileId,
-    fileId,
-    parentDirectoryId,
-    fileName
+    createApiClient, imageId, looksLikeImage, libraryFileId, fileId, parentDirectoryId, fileName
   });
 })(globalThis);

@@ -15,6 +15,9 @@
     const total = Number(event?.total) || 0;
     const parts = [total > 0 ? `已删除 ${deleted} / ${total} 张` : `已删除 ${deleted} 张`];
     if (failed > 0) parts.push(`${failed} 张失败已跳过`);
+    if (event?.concurrency) parts.push(`并发 ${event.concurrency}`);
+    const reasons = Object.entries(event?.failureReasons || {}).map(([reason, count]) => `${reason} ${count} 张`);
+    if (reasons.length) parts.push(`失败原因：${reasons.join("；")}`);
     return parts.join("，");
   }
 

@@ -11,6 +11,7 @@
 
   function itemTimestamp(item) {
     const fields = [
+      item?.file_upload_time, item?.record_creation_time,
       item?.created_at, item?.create_time, item?.created, item?.updated_at,
       item?.file?.created_at, item?.node?.created_at, item?.metadata?.created_at
     ];
@@ -31,19 +32,27 @@
       api,
       onProgress = () => {},
       signal,
-      pageLimit = 500,
+      pageLimit = 50,
       maxPages = 1000
     } = options;
     let total = 0;
     let after = null;
     const seenCursors = new Set();
+    const seenIds = new Set();
 
     for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
       throwIfAborted(signal);
       const page = await api.listImages({ limit: pageLimit, after });
-      total += page.items.length;
+      for (const item of page.items) {
+        const id = api.imageId(item);
+        if (id) seenIds.add(id);
+      }
+      total = seenIds.size;
       onProgress({ phase: "scanning", total });
-      if (!page.cursor || page.items.length === 0 || seenCursors.has(page.cursor)) {
+      if (page.cursor && (page.cursor === after || seenCursors.has(page.cursor))) {
+        throw new Error("列表游标重复，统计不完整，已停止");
+      }
+      if (!page.cursor) {
         return { count: total, complete: true };
       }
       seenCursors.add(page.cursor);
@@ -58,7 +67,7 @@
       onProgress = () => {},
       signal,
       wait = defaultWait,
-      pageLimit = 100,
+      pageLimit = 50,
       concurrency = 3,
       interDeleteDelay = 100,
       maxRounds = 100000,
@@ -110,6 +119,7 @@
     }
 
     let listFailures = 0;
+    let drained = false;
 
     for (let round = 0; round < maxRounds; round += 1) {
       throwIfAborted(signal);
@@ -128,20 +138,24 @@
         if (emptyRecheckDelay) await wait(emptyRecheckDelay * Math.min(listFailures, 3));
         continue;
       }
-      const entries = page.items.map((item) => ({ item, id: api.imageId(item) }));
+      // eligible 在启动工作槽之前构建；必须先去重，否则同页重复 ID
+      // 会同时进入多个槽，即使稍后写入 deletedIds 也来不及阻止。
+      const pageIds = new Set();
+      const entries = [];
+      for (const item of page.items) {
+        const id = api.imageId(item);
+        if (!id || pageIds.has(id)) continue;
+        pageIds.add(id);
+        entries.push({ item, id });
+      }
       const eligible = entries.filter(({ item, id }) => isEligible(item, id));
 
-      if (entries.length === 0) {
-        if (after === resumeAfter) {
-          if (await confirmDrained()) break;
-          continue;
-        }
-        after = resumeAfter;
-        continue;
-      }
       if (eligible.length === 0) {
-        if (!page.cursor || visitedCursors.has(page.cursor)) {
-          if (await confirmDrained()) break;
+        if (page.cursor && (page.cursor === after || visitedCursors.has(page.cursor))) {
+          throw new Error("列表游标重复，无法确认已清理完毕，已停止");
+        }
+        if (!page.cursor) {
+          if (await confirmDrained()) { drained = true; break; }
           continue;
         }
         visitedCursors.add(page.cursor);
@@ -152,26 +166,46 @@
       emptyStreak = 0;
 
       let deletedThisRound = 0;
-      for (let index = 0; index < eligible.length; index += threads) {
-        throwIfAborted(signal);
-        const chunk = eligible.slice(index, index + threads);
-        const results = await Promise.all(chunk.map((entry) => api.deleteImage(entry.item)));
-        results.forEach((result, position) => {
+      let nextIndex = 0;
+      let activeRequests = 0;
+      let fatalError = null;
+      let lastFailure = null;
+      // 每个工作槽完成后立即领取下一项，不等待同组最慢的请求。
+      async function worker() {
+        while (nextIndex < eligible.length && !fatalError) {
+          if (signal?.aborted) { fatalError = new Error("操作已取消"); return; }
+          const entry = eligible[nextIndex++];
+          activeRequests += 1;
+          let result;
+          try {
+            result = await api.deleteImage(entry.item);
+          } catch (error) {
+            fatalError = error;
+            return;
+          } finally {
+            activeRequests -= 1;
+          }
           if (result.ok) {
             deleted += 1;
             deletedThisRound += 1;
-            deletedIds.add(chunk[position].id);
+            deletedIds.add(entry.id);
           } else {
-            failed.set(chunk[position].id, result.status);
+            lastFailure = String(result.status || "未知失败");
+            failed.set(entry.id, lastFailure);
+            console.warn("[图片清理器] 删除失败", entry.id, lastFailure);
           }
-        });
-        const lastFailure = results.find((result) => !result.ok);
-        if (deleted === 0 && failed.size >= 5) {
-          throw new Error(`删除接口连续失败（HTTP ${lastFailure?.status}），已停止；接口可能已变更`);
+          const failureReasons = {};
+          for (const reason of failed.values()) failureReasons[reason] = (failureReasons[reason] || 0) + 1;
+          onProgress({ phase: "progress", deleted, failed: failed.size, total,
+            concurrency: threads, activeRequests, failureReasons, lastFailure });
+          if (deleted === 0 && failed.size >= 5) {
+            fatalError = new Error(`删除连续失败，已停止：${lastFailure}`);
+          }
+          if (interDeleteDelay && !fatalError && nextIndex < eligible.length) await wait(interDeleteDelay);
         }
-        onProgress({ phase: "progress", deleted, failed: failed.size, total });
-        if (interDeleteDelay) await wait(interDeleteDelay);
       }
+      await Promise.all(Array.from({ length: Math.min(threads, eligible.length) }, () => worker()));
+      if (fatalError) throw fatalError;
 
       if (!canaryDone && deletedThisRound > 0) {
         let survivorCount = null;
@@ -201,7 +235,10 @@
       after = resumeAfter;
     }
 
-    const result = { deleted, failed: failed.size, remaining: failed.size };
+    if (!drained) throw new Error("已达到处理轮数上限，清理尚未完成");
+    const failureReasons = {};
+    for (const reason of failed.values()) failureReasons[reason] = (failureReasons[reason] || 0) + 1;
+    const result = { deleted, failed: failed.size, remaining: failed.size, failureReasons };
     onProgress({ phase: "complete", ...result });
     return result;
   }
